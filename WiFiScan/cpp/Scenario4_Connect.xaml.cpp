@@ -24,6 +24,7 @@ using namespace Windows::Foundation::Collections;
 using namespace Windows::Globalization::DateTimeFormatting;
 using namespace Windows::Networking::Connectivity;
 using namespace Windows::Security::Credentials;
+using namespace Windows::System::Threading;
 using namespace Windows::UI::Core;
 using namespace Windows::UI::Xaml;
 using namespace Windows::UI::Xaml::Controls;
@@ -73,6 +74,8 @@ void Scenario4_Connect::OnNavigatedTo(NavigationEventArgs^ e)
                         _firstAdapter = adapter;
                         ScanButton->IsEnabled = true;
                         DisconnectButton->IsEnabled = true;
+                        UpdateConnectivityStatus();
+                        NetworkInformation::NetworkStatusChanged += ref new NetworkStatusChangedEventHandler(this, &SDKTemplate::WiFiScan::Scenario4_Connect::OnNetworkStatusChanged);
                     });
                 }
                 else
@@ -112,12 +115,51 @@ void Scenario4_Connect::ScanButton_Click(Platform::Object^ sender, Windows::UI::
     scanTask.then([this]()
     {
         DisplayNetworkReport(_firstAdapter->NetworkReport);
+        WiFiNetworkDisplay::UpdateConnectivityLevels(ResultCollection, 0);
     });
 }
 
 void Scenario4_Connect::DisconnectButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)
 {
     _firstAdapter->Disconnect();
+}
+
+void Scenario4_Connect::UpdateConnectivityStatus()
+{
+    auto getConnectedProfileOperation = _firstAdapter->NetworkAdapter->GetConnectedProfileAsync();
+    auto getConnectedProfileTask = create_task(getConnectedProfileOperation);
+
+    getConnectedProfileTask.then([this](ConnectionProfile^ connectedProfile)
+    {
+        if (connectedProfile != nullptr && _savedProfileName != connectedProfile->ProfileName)
+        {
+            _savedProfileName = connectedProfile->ProfileName;
+            _rootPage->Dispatcher->RunAsync(CoreDispatcherPriority::Normal,
+                ref new DispatchedHandler([this, connectedProfile]
+            {
+                _rootPage->NotifyUser("WiFi adapter connected to: " + connectedProfile->ProfileName +
+                    " (" + WiFiNetworkDisplay::GetConnectivityLevelAsString(connectedProfile->GetNetworkConnectivityLevel()) + ")",
+                    SDKTemplate::NotifyType::StatusMessage);
+            }));
+        }
+        else  if (connectedProfile == nullptr && _savedProfileName != nullptr)
+        {
+            _savedProfileName = nullptr;
+            _rootPage->Dispatcher->RunAsync(CoreDispatcherPriority::Normal,
+                ref new DispatchedHandler([this, connectedProfile]
+            {
+                _rootPage->NotifyUser("WiFi adapter disconnected", SDKTemplate::NotifyType::StatusMessage);
+            }));
+        }
+    });
+}
+
+void Scenario4_Connect::OnNetworkStatusChanged(Platform::Object^ sender)
+{
+    UpdateConnectivityStatus();
+
+    // Since the network status was changed, update the connectivity level displayed
+    WiFiNetworkDisplay::UpdateConnectivityLevels(ResultCollection, 0);
 }
 
 void Scenario4_Connect::ResultsListView_SelectionChanged(Platform::Object^ sender, Windows::UI::Xaml::Controls::SelectionChangedEventArgs^ e)

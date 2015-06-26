@@ -58,24 +58,24 @@ namespace SDKTemplate
             }
 
             property Windows::Devices::WiFi::WiFiAvailableNetwork^ AvailableNetwork;
-
+            property Platform::String^ ConnectivityLevel;
             property Windows::UI::Xaml::Media::Imaging::BitmapImage^ WiFiImage;
-
             virtual event Windows::UI::Xaml::Data::PropertyChangedEventHandler^ PropertyChanged;
 
         protected:
-
             void OnPropertyChanged(Platform::String^ name);
 
         internal:
             static Platform::String^ GetConnectionStatusAsString(Windows::Devices::WiFi::WiFiConnectionStatus connectionStatus);
+            static Platform::String^ GetConnectivityLevelAsString(Windows::Networking::Connectivity::NetworkConnectivityLevel conectivityLevel);
+            static Concurrency::task<void> UpdateConnectivityLevels(Windows::Foundation::Collections::IObservableVector<WiFiNetworkDisplay^>^ networkCollection, UINT current);
 
         private:
             void UpdateWiFiImage();
+            Concurrency::task<void> UpdateConnectivityLevel();
+            Windows::Devices::WiFi::WiFiAdapter^ adapter;
             Platform::String^ GetNetworkAuthenticationTypeAsString(Windows::Networking::Connectivity::NetworkAuthenticationType  authenticationType);
             Platform::String^ GetNetworkEncryptionTypeAsString(Windows::Networking::Connectivity::NetworkEncryptionType encryptionType);
-
-            Windows::Devices::WiFi::WiFiAdapter^ adapter;
         };
 
     }

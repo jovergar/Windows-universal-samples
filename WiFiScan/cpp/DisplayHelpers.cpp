@@ -14,6 +14,7 @@
 #include "DisplayHelpers.h"
 #include "MainPage.xaml.h"
 
+using namespace concurrency;
 using namespace Platform;
 using namespace Platform::Collections;
 using namespace Windows::Devices::WiFi;
@@ -22,9 +23,7 @@ using namespace Windows::Foundation::Collections;
 using namespace Windows::Networking::Connectivity;
 using namespace Windows::UI::Core;
 using namespace Windows::UI::Xaml::Data;
-using namespace Windows::UI::Xaml::Interop;
 using namespace Windows::UI::Xaml::Media::Imaging;
-using namespace concurrency;
 
 using namespace SDKTemplate::WiFiScan;
 namespace SDKTemplate {
@@ -56,6 +55,67 @@ namespace SDKTemplate {
             WiFiImage = ref new BitmapImage(ref new Uri(imageFileName));
 
             OnPropertyChanged("WiFiImage");
+        }
+
+        task<void> WiFiNetworkDisplay::UpdateConnectivityLevels(IObservableVector<WiFiNetworkDisplay^>^ networkCollection, UINT current)
+        {
+            if (current < networkCollection->Size)
+            {
+                try {
+                    return networkCollection->GetAt(current)->UpdateConnectivityLevel().then([networkCollection, current]()
+                    {
+                        // Wait until the first task is done, then recursively call the next one
+                        // This way we won't call GetConnectedProfileAsync() too many times 
+                        // which may exhaust the available wlan handles
+                        return UpdateConnectivityLevels(networkCollection, current + 1);
+                    });
+                }
+                catch (...)
+                {
+                    // The network collection may have changed. If that happens,
+                    // return an empty task to terminate the recusrsion
+                    return create_task([]()
+                    {
+                    });
+                }
+            }
+            else
+            {
+                return create_task([]()
+                {
+                });
+            }
+        }
+
+        task<void> WiFiNetworkDisplay::UpdateConnectivityLevel()
+        {
+            auto connectionProfileOperation = adapter->NetworkAdapter->GetConnectedProfileAsync();
+            auto connectionProfileTask = create_task(connectionProfileOperation);
+
+            return connectionProfileTask.then([this](ConnectionProfile^ connectedProfile)
+            {
+                Platform::String^ connectedSsid = nullptr;
+
+                if (connectedProfile != nullptr &&
+                    connectedProfile->IsWlanConnectionProfile &&
+                    connectedProfile->WlanConnectionProfileDetails != nullptr)
+                {
+                    connectedSsid = connectedProfile->WlanConnectionProfileDetails->GetConnectedSsid();
+                }
+
+                if (connectedSsid != nullptr &&
+                    AvailableNetwork->Ssid != nullptr &&
+                    connectedSsid->Equals(AvailableNetwork->Ssid))
+                {
+                    ConnectivityLevel = WiFiNetworkDisplay::GetConnectivityLevelAsString(connectedProfile->GetNetworkConnectivityLevel());
+                }
+                else
+                {
+                    ConnectivityLevel = L"Not Connected";
+                }
+
+                OnPropertyChanged("ConnectivityLevel");
+            });
         }
 
         Platform::String^ WiFiNetworkDisplay::GetNetworkAuthenticationTypeAsString(NetworkAuthenticationType authenticationType)
@@ -132,6 +192,23 @@ namespace SDKTemplate {
                 return L"UnsupportedAuthenticationProtocol";
             default:
                 return L"Error getting Connection Status";
+            }
+        }
+
+        Platform::String^ WiFiNetworkDisplay::GetConnectivityLevelAsString(NetworkConnectivityLevel conectivityLevel)
+        {
+            switch (conectivityLevel)
+            {
+            case NetworkConnectivityLevel::ConstrainedInternetAccess:
+                return L"ConstrainedInternetAccess";
+            case NetworkConnectivityLevel::InternetAccess:
+                return L"InternetAccess";
+            case NetworkConnectivityLevel::LocalAccess:
+                return  L"LocalAccess";
+            case NetworkConnectivityLevel::None:
+                return  L"Not Connected";
+            default:
+                return L"Not Connected";
             }
         }
 
